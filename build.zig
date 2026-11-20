@@ -43,8 +43,25 @@ pub fn build(b: *std.Build) void {
         "zircon_is_halted",
         "zircon_get_ram_ptr",
         "zircon_get_ram_size",
+        // 0.2.0
+        "zircon_get_version",
+        "zircon_get_trap_code",
+        "zircon_get_trap_value",
+        "zircon_get_stat",
+        "zircon_run",
+        "zircon_get_text_ptr",
+        "zircon_get_text_capacity",
+        "zircon_disasm",
+        "zircon_assemble",
     };
     b.installArtifact(wasm);
+
+    // Instantiates the real .wasm under Node.js with an empty import object and
+    // checks every export (requires `node` on PATH).
+    const smoke = b.addSystemCommand(&.{ "node", "tests/wasm_smoke.mjs" });
+    smoke.addArtifactArg(wasm);
+    const smoke_step = b.step("wasm-smoke", "Run the Node.js smoke test against the WebAssembly artifact");
+    smoke_step.dependOn(&smoke.step);
 
     // Test runner
     const unit_tests = b.addTest(.{

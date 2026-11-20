@@ -37,6 +37,18 @@ zig build test
 zig build -Doptimize=ReleaseSmall -Dtarget=wasm32-freestanding
 ```
 
+## 0.2.0 변경 사항
+
+- RV32M 곱셈/나눗셈 확장, 읽기 전용 Zicntr 카운터(cycle, time, instret), FENCE 계열 명령어를 지원하고, 예약된 인코딩은 불법 명령어 트랩으로 처리합니다. 결함(fault)은 아키텍처 상태를 바꾸지 않고 트랩 코드와 함께 정지합니다.
+- 5단 파이프라인 타이밍 모델(load-use 스톨, 분기/점프 플러시, 포워딩 통계)이 사이클 수를 계산하며, 역방향 스텝은 레지스터뿐 아니라 store로 덮어쓴 메모리와 통계까지 복원합니다.
+- 공유 명령어 테이블 기반의 어셈블러와 디스어셈블러를 추가했고, `zircon run|asm|disasm` CLI(`--json`, `--trace` 지원)와 새 WebAssembly 익스포트(`zircon_assemble`, `zircon_disasm`, `zircon_run`, `zircon_get_stat` 등)를 제공합니다. 기존 익스포트의 이름과 시그니처는 그대로입니다.
+
+```bash
+zig build test
+zig build -Doptimize=ReleaseSmall
+./zig-out/bin/zircon run examples/sort.s --json
+```
+
 ## 라이선스
 
 MIT License. Copyright (c) 2026 Jeong Hoon Kim (Aether Systems & Research Lab).

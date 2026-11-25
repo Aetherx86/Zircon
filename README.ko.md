@@ -1,6 +1,6 @@
 # Zircon (자립형 RISC-V RV32I 마이크로 에뮬레이터 & 양방향 파이프라인 스텝퍼)
 
-[English](README.md) · [라이선스](LICENSE) · [라이브 워크벤치](https://aetherx86.github.io/zircon/)
+[English](README.md) · [라이선스](LICENSE) · [라이브 워크벤치](https://omakasekim.github.io/zircon/)
 
 Zircon은 libc 임포트가 일체 없는 베어메탈 RISC-V (RV32I) 유저 모드 명령어 에뮬레이터이자 양방향 파이프라인 스텝퍼입니다. 컴팩트한(4 KB 미만, 3.1 KB) 단일 자립형 WebAssembly 아티팩트(`-target wasm32-freestanding -O ReleaseSmall`)로 직접 컴파일됩니다.
 

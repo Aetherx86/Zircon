@@ -2,7 +2,7 @@
 
 Freestanding RISC-V (RV32IM) Micro-Emulator & Stepper
 
-A bare-metal RV32IM user-mode instruction emulator and bidirectional pipeline stepper compiled directly to a compact (about 25 KB) freestanding WebAssembly artifact with zero imports (`wasm32-freestanding`, `ReleaseSmall`). It powers the workbench at [aetherx86.github.io/zircon](https://aetherx86.github.io/zircon/).
+A bare-metal RV32IM user-mode instruction emulator and bidirectional pipeline stepper compiled directly to a compact (about 25 KB) freestanding WebAssembly artifact with zero imports (`wasm32-freestanding`, `ReleaseSmall`). It powers the workbench at [omakasekim.github.io/zircon](https://omakasekim.github.io/zircon/).
 
 ## Architecture
 

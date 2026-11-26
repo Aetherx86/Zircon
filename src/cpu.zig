@@ -5,13 +5,14 @@
 const std = @import("std");
 pub const isa = @import("isa.zig");
 
-pub const version = "0.2.0";
+pub const version = "0.3.0";
 pub const version_major: u32 = 0;
-pub const version_minor: u32 = 2;
+pub const version_minor: u32 = 3;
 pub const version_patch: u32 = 0;
 
 pub const RAM_SIZE: usize = 64 * 1024; // 64 KiB unified memory
 pub const MAX_HISTORY: usize = 256;
+pub const MAX_BREAKPOINTS: usize = 16;
 
 const ram_size_u32: u32 = @intCast(RAM_SIZE);
 
@@ -166,6 +167,9 @@ pub const CPU = struct {
     history: [MAX_HISTORY]Snapshot,
     history_head: usize,
     history_len: usize,
+    breakpoints: [MAX_BREAKPOINTS]u32,
+    breakpoint_count: usize,
+    hit_breakpoint: bool,
 
     pub fn init() CPU {
         var cpu: CPU = undefined;
@@ -186,6 +190,40 @@ pub const CPU = struct {
         @memset(&self.ram, 0);
         self.history_head = 0;
         self.history_len = 0;
+        @memset(&self.breakpoints, 0);
+        self.breakpoint_count = 0;
+        self.hit_breakpoint = false;
+    }
+
+    pub fn addBreakpoint(self: *CPU, addr: u32) bool {
+        if (self.hasBreakpoint(addr)) return true;
+        if (self.breakpoint_count >= MAX_BREAKPOINTS) return false;
+        self.breakpoints[self.breakpoint_count] = addr;
+        self.breakpoint_count += 1;
+        return true;
+    }
+
+    pub fn removeBreakpoint(self: *CPU, addr: u32) bool {
+        for (0..self.breakpoint_count) |i| {
+            if (self.breakpoints[i] == addr) {
+                self.breakpoint_count -= 1;
+                self.breakpoints[i] = self.breakpoints[self.breakpoint_count];
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn clearBreakpoints(self: *CPU) void {
+        self.breakpoint_count = 0;
+        self.hit_breakpoint = false;
+    }
+
+    pub fn hasBreakpoint(self: *const CPU, addr: u32) bool {
+        for (self.breakpoints[0..self.breakpoint_count]) |bp| {
+            if (bp == addr) return true;
+        }
+        return false;
     }
 
     pub fn loadProgram(self: *CPU, program: []const u8, base_addr: u32) !void {
@@ -560,8 +598,13 @@ pub const CPU = struct {
     /// Runs until the machine halts, faults, or `max_steps` instructions retire.
     /// Returns the number of instructions retired.
     pub fn run(self: *CPU, max_steps: u64) u64 {
+        self.hit_breakpoint = false;
         var n: u64 = 0;
         while (n < max_steps) : (n += 1) {
+            if (self.breakpoint_count > 0 and self.hasBreakpoint(self.pc)) {
+                self.hit_breakpoint = true;
+                break;
+            }
             const ok = self.step() catch break;
             if (!ok) break;
         }

@@ -53,6 +53,12 @@ pub fn build(b: *std.Build) void {
         "zircon_get_text_capacity",
         "zircon_disasm",
         "zircon_assemble",
+        // 0.3.0
+        "zircon_set_reg",
+        "zircon_add_breakpoint",
+        "zircon_remove_breakpoint",
+        "zircon_clear_breakpoints",
+        "zircon_hit_breakpoint",
     };
     b.installArtifact(wasm);
 

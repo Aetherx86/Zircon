@@ -160,7 +160,43 @@ pub export fn zircon_assemble(src_len: u32, base: u32) i32 {
     global_cpu.trap_code = 0;
     global_cpu.trap_value = 0;
     global_cpu.history_len = 0;
+    global_cpu.hit_breakpoint = false;
     return @intCast(n);
+}
+
+// ---------------------------------------------------------------------------
+// 0.3.0 exports
+// ---------------------------------------------------------------------------
+
+/// Write a general-purpose register `x1..x31` (`x0` and out-of-range indices are ignored).
+pub export fn zircon_set_reg(idx: u32, val: u32) void {
+    if (idx == 0 or idx >= 32) return;
+    ensureInit();
+    global_cpu.writeReg(@truncate(idx), val);
+}
+
+/// Register a PC breakpoint (up to 16). Returns 1 on success, 0 if table is full.
+pub export fn zircon_add_breakpoint(addr: u32) i32 {
+    ensureInit();
+    return if (global_cpu.addBreakpoint(addr)) 1 else 0;
+}
+
+/// Remove a previously set PC breakpoint. Returns 1 if removed, 0 if not present.
+pub export fn zircon_remove_breakpoint(addr: u32) i32 {
+    if (!initialized) return 0;
+    return if (global_cpu.removeBreakpoint(addr)) 1 else 0;
+}
+
+/// Remove all active PC breakpoints.
+pub export fn zircon_clear_breakpoints() void {
+    if (!initialized) return;
+    global_cpu.clearBreakpoints();
+}
+
+/// Returns 1 if the most recent `zircon_run` stopped at a breakpoint, 0 otherwise.
+pub export fn zircon_hit_breakpoint() i32 {
+    if (!initialized) return 0;
+    return if (global_cpu.hit_breakpoint) 1 else 0;
 }
 
 const std = @import("std");
@@ -173,7 +209,7 @@ fn putSource(src: []const u8) u32 {
 
 test "wasm exports: assemble, run, statistics and step back" {
     zircon_init();
-    try testing.expectEqual(@as(u32, 0x000200), zircon_get_version());
+    try testing.expectEqual(@as(u32, 0x000300), zircon_get_version());
     const len = putSource(
         \\        li   x1, 5
         \\        li   x2, 0
@@ -245,4 +281,28 @@ test "wasm exports: reset without init keeps loaded bytes" {
     try testing.expectEqual(@as(i32, -1), zircon_load_byte(cpu.RAM_SIZE, 0));
     try testing.expectEqual(@as(i32, 1), zircon_step());
     try testing.expectEqual(@as(u32, 0x73), zircon_get_trap_code());
+}
+
+test "wasm exports: register seeding and breakpoints" {
+    zircon_init();
+    const len = putSource(
+        \\        addi x1, x1, 5
+        \\        addi x1, x1, 10
+        \\        ecall
+    );
+    try testing.expectEqual(@as(i32, 12), zircon_assemble(len, 0));
+    zircon_set_reg(1, 27);
+    try testing.expectEqual(@as(i32, 1), zircon_add_breakpoint(4));
+    const n1 = zircon_run(100);
+    try testing.expectEqual(@as(u32, 1), n1);
+    try testing.expectEqual(@as(i32, 1), zircon_hit_breakpoint());
+    try testing.expectEqual(@as(u32, 4), zircon_get_pc());
+    try testing.expectEqual(@as(u32, 32), zircon_get_reg(1));
+
+    try testing.expectEqual(@as(i32, 1), zircon_remove_breakpoint(4));
+    const n2 = zircon_run(100);
+    try testing.expectEqual(@as(u32, 2), n2);
+    try testing.expectEqual(@as(i32, 0), zircon_hit_breakpoint());
+    try testing.expectEqual(@as(u32, 42), zircon_get_reg(1));
+    zircon_clear_breakpoints();
 }

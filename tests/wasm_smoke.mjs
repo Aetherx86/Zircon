@@ -22,7 +22,11 @@ const v020 = {
   zircon_run: 1, zircon_get_text_ptr: 0, zircon_get_text_capacity: 0, zircon_disasm: 2,
   zircon_assemble: 2,
 };
-for (const [name, arity] of Object.entries({ ...v010, ...v020 })) {
+const v030 = {
+  zircon_set_reg: 2, zircon_add_breakpoint: 1, zircon_remove_breakpoint: 1,
+  zircon_clear_breakpoints: 0, zircon_hit_breakpoint: 0,
+};
+for (const [name, arity] of Object.entries({ ...v010, ...v020, ...v030 })) {
   assert.equal(typeof z[name], "function", `missing export ${name}`);
   assert.equal(z[name].length, arity, `${name} arity`);
 }
@@ -113,5 +117,20 @@ eq(z.zircon_is_halted(), 1, "halted on fault");
 eq(z.zircon_get_trap_code(), 2, "illegal instruction trap");
 eq(z.zircon_step(), 0, "stays halted");
 
-eq(z.zircon_get_version(), 0x000200, "version");
-console.log(`wasm smoke test: ${checks} checks passed (${bytes.length} bytes, ${Object.keys(v010).length + Object.keys(v020).length} exports)`);
+// 0.3.0 register seeding and PC breakpoints.
+z.zircon_reset();
+eq(z.zircon_assemble(putText("addi x1, x1, 5\naddi x1, x1, 10\necall\n"), 0), 12, "bp assemble");
+z.zircon_set_reg(1, 27);
+eq(z.zircon_add_breakpoint(4), 1, "add breakpoint");
+eq(z.zircon_run(100), 1, "run stops at breakpoint");
+eq(z.zircon_hit_breakpoint(), 1, "hit_breakpoint set");
+eq(z.zircon_get_pc(), 4, "stopped at bp pc");
+eq(z.zircon_get_reg(1), 32, "seeded reg updated");
+eq(z.zircon_remove_breakpoint(4), 1, "remove breakpoint");
+eq(z.zircon_run(100), 2, "run resumes after removing bp");
+eq(z.zircon_hit_breakpoint(), 0, "hit_breakpoint cleared");
+eq(z.zircon_get_reg(1), 42, "final reg after resume");
+z.zircon_clear_breakpoints();
+
+eq(z.zircon_get_version(), 0x000300, "version");
+console.log(`wasm smoke test: ${checks} checks passed (${bytes.length} bytes, ${Object.keys(v010).length + Object.keys(v020).length + Object.keys(v030).length} exports)`);

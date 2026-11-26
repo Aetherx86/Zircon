@@ -16,7 +16,7 @@ const usage =
     \\
     \\Usage:
     \\  zircon                                  run the built-in demo program
-    \\  zircon run <file> [--base ADDR] [--max-steps N] [--json] [--trace]
+    \\  zircon run <file> [--base ADDR] [--max-steps N] [--break ADDR] [--reg R=VAL] [--json] [--trace]
     \\  zircon asm <file.s> -o <out.bin> [--base ADDR]
     \\  zircon disasm <file> [--base ADDR] [--json]
     \\  zircon version
@@ -25,12 +25,14 @@ const usage =
     \\Files ending in .s or .S are assembled first; any other file is loaded
     \\as a raw little-endian memory image at the base address (default 0).
     \\
-    \\Exit status of `run`: 0 halted by ecall/ebreak, 1 fault, 3 step limit.
+    \\Exit status of `run`: 0 halted by ecall/ebreak, 1 fault, 3 step limit, 4 breakpoint.
     \\Usage, input and assembly errors exit with status 2.
     \\
 ;
 
 const UsageError = error{Usage};
+
+const RegInit = struct { reg: u5, val: u32 };
 
 const Options = struct {
     path: ?[]const u8 = null,
@@ -39,6 +41,10 @@ const Options = struct {
     max_steps: u64 = 1_000_000,
     json: bool = false,
     trace: bool = false,
+    breakpoints: [cpu.MAX_BREAKPOINTS]u32 = @splat(0),
+    breakpoint_count: usize = 0,
+    reg_inits: [32]RegInit = @splat(.{ .reg = 0, .val = 0 }),
+    reg_init_count: usize = 0,
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -95,6 +101,18 @@ fn eql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
 
+fn parseRegName(name: []const u8) ?u5 {
+    if (name.len >= 2 and (name[0] == 'x' or name[0] == 'X')) {
+        const n = std.fmt.parseInt(u8, name[1..], 10) catch return null;
+        if (n < 32) return @intCast(n);
+        return null;
+    }
+    for (isa.abi_names, 0..) |abi, i| {
+        if (std.ascii.eqlIgnoreCase(name, abi)) return @intCast(i);
+    }
+    return null;
+}
+
 fn parseOptions(args: []const [:0]const u8, err: *Writer) !Options {
     var o = Options{};
     var i: usize = 0;
@@ -104,7 +122,7 @@ fn parseOptions(args: []const [:0]const u8, err: *Writer) !Options {
             o.json = true;
         } else if (eql(a, "--trace")) {
             o.trace = true;
-        } else if (eql(a, "--base") or eql(a, "--max-steps") or eql(a, "-o")) {
+        } else if (eql(a, "--base") or eql(a, "--max-steps") or eql(a, "-o") or eql(a, "--break") or eql(a, "--reg")) {
             i += 1;
             if (i == args.len) return error.Usage;
             const v = args[i];
@@ -113,6 +131,18 @@ fn parseOptions(args: []const [:0]const u8, err: *Writer) !Options {
             } else if (eql(a, "--base")) {
                 o.base = std.fmt.parseInt(u32, v, 0) catch return report(err, "invalid --base value: {s}\n", .{v});
                 if (o.base >= cpu.RAM_SIZE) return report(err, "--base must be below 0x{x}\n", .{cpu.RAM_SIZE});
+            } else if (eql(a, "--break")) {
+                const addr = std.fmt.parseInt(u32, v, 0) catch return report(err, "invalid --break address: {s}\n", .{v});
+                if (o.breakpoint_count >= cpu.MAX_BREAKPOINTS) return report(err, "too many --break addresses (max {d})\n", .{cpu.MAX_BREAKPOINTS});
+                o.breakpoints[o.breakpoint_count] = addr;
+                o.breakpoint_count += 1;
+            } else if (eql(a, "--reg")) {
+                const eq_pos = std.mem.indexOfScalar(u8, v, '=') orelse return report(err, "--reg expects NAME=VALUE: {s}\n", .{v});
+                const reg = parseRegName(v[0..eq_pos]) orelse return report(err, "unknown register in --reg: {s}\n", .{v[0..eq_pos]});
+                const val = std.fmt.parseInt(u32, v[eq_pos + 1 ..], 0) catch return report(err, "invalid value in --reg: {s}\n", .{v[eq_pos + 1 ..]});
+                if (o.reg_init_count >= 32) return report(err, "too many --reg options\n", .{});
+                o.reg_inits[o.reg_init_count] = .{ .reg = reg, .val = val };
+                o.reg_init_count += 1;
             } else {
                 o.max_steps = std.fmt.parseInt(u64, v, 0) catch return report(err, "invalid --max-steps value: {s}\n", .{v});
             }
@@ -208,10 +238,20 @@ fn cmdRun(io: Io, arena: std.mem.Allocator, opts: Options, out: *Writer, err: *W
     const c = try arena.create(cpu.CPU);
     c.reset();
     try c.loadProgram(image, opts.base);
+    for (opts.reg_inits[0..opts.reg_init_count]) |ri| {
+        c.writeReg(ri.reg, ri.val);
+    }
+    for (opts.breakpoints[0..opts.breakpoint_count]) |bp| {
+        _ = c.addBreakpoint(bp);
+    }
 
     var line: [disasm.max_line]u8 = undefined;
     var steps: u64 = 0;
     while (steps < opts.max_steps and !c.halted) : (steps += 1) {
+        if (c.breakpoint_count > 0 and c.hasBreakpoint(c.pc)) {
+            c.hit_breakpoint = true;
+            break;
+        }
         if (opts.trace and c.pc <= cpu.RAM_SIZE - 4 and c.pc & 3 == 0) {
             const w = std.mem.readInt(u32, c.ram[c.pc..][0..4], .little);
             try out.print("{x:0>8}:  {x:0>8}  {s}\n", .{ c.pc, w, disasm.disassemble(w, c.pc, &line) });
@@ -221,8 +261,8 @@ fn cmdRun(io: Io, arena: std.mem.Allocator, opts: Options, out: *Writer, err: *W
     }
 
     const trap: cpu.Trap = @fromBackingInt(@intCast(c.trap_code));
-    const status: []const u8 = if (!c.halted) "step_limit" else if (trap.isFault()) "fault" else "halted";
-    const code: u8 = if (!c.halted) 3 else if (trap.isFault()) 1 else 0;
+    const status: []const u8 = if (c.hit_breakpoint) "breakpoint" else if (!c.halted) "step_limit" else if (trap.isFault()) "fault" else "halted";
+    const code: u8 = if (c.hit_breakpoint) 4 else if (!c.halted) 3 else if (trap.isFault()) 1 else 0;
     const cpi: f64 = if (c.inst_count == 0) 0 else @as(f64, @floatFromInt(c.cycles)) / @as(f64, @floatFromInt(c.inst_count));
     const s = c.stats;
 

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-11-27
+
+### Added
+- PC hardware breakpoint table (up to 16 breakpoints) in `CPU` (`addBreakpoint`, `removeBreakpoint`, `clearBreakpoints`, `hasBreakpoint`, `hit_breakpoint`) integrated into `CPU.run()`.
+- CLI debugging options on `zircon run`: `--break ADDR` (repeatable, exits with status `4` / `"status":"breakpoint"`) and `--reg NAME=VALUE` (supports `x0..x31` and RISC-V ABI register names such as `a0`, `t0`, `sp`, `ra`).
+- Five new freestanding WebAssembly exports (`zircon_set_reg`, `zircon_add_breakpoint`, `zircon_remove_breakpoint`, `zircon_clear_breakpoints`, `zircon_hit_breakpoint`) while preserving 100% ABI compatibility with all 22 v0.1.0/v0.2.0 exports.
+
 ## [0.2.0] - 2026-11-20
 
 ### Added
